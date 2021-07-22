@@ -63,7 +63,7 @@ func main() {
 }
 
 func GetRPiMacAddress(ipNet net.IPNet) ([]net.IP, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "arp", "-a")
 	b, err := cmd.CombinedOutput()
@@ -71,7 +71,7 @@ func GetRPiMacAddress(ipNet net.IPNet) ([]net.IP, error) {
 	if err != nil {
 		return nil, fmt.Errorf("arp failed. output: %v, err: %w", s, err)
 	}
-	r := regexp.MustCompile("\\(([0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3})\\) at b8:27:eb:[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2} on")
+	r := regexp.MustCompile("\\(([0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3})\\) at b8:27:eb:[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2}")
 
 	matches := r.FindAllStringSubmatch(s, -1)
 	result := make([]net.IP, 0)
