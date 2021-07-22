@@ -7,6 +7,8 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -34,7 +36,6 @@ func main() {
 	ips := AllIPAddrInNetwork(ipArr, maskArr)
 
 	limit := make(chan struct{}, 100)
-	result := make([]net.IP, 0)
 	var wg sync.WaitGroup
 	wg.Add(len(ips))
 	for _, addr := range ips {
@@ -43,21 +44,59 @@ func main() {
 		go func() {
 			defer wg.Done()
 			defer func() { <-limit }()
-			found := Ping(addr, time.Second)
-			if !found {
-				return
-			}
-			_, err := GetRPiMACAddress(addr)
+			conn, err := net.DialTimeout("tcp", fmt.Sprintf("%v:80", addr), time.Millisecond*300)
 			if err != nil {
 				return
 			}
-			result = append(result, addr)
+			conn.Close()
 		}()
 	}
 	wg.Wait()
+	result, err := GetRPiMacAddress(net.IPNet{IP: ip, Mask: mask})
+	if err != nil {
+		panic(err)
+	}
+
 	for _, a := range result {
 		fmt.Println(a)
 	}
+}
+
+func GetRPiMacAddress(ipNet net.IPNet) ([]net.IP, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "arp", "-a")
+	b, err := cmd.CombinedOutput()
+	s := string(b)
+	if err != nil {
+		return nil, fmt.Errorf("arp failed. output: %v, err: %w", s, err)
+	}
+	r := regexp.MustCompile("\\(([0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3})\\) at b8:27:eb:[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2} on")
+
+	matches := r.FindAllStringSubmatch(s, -1)
+	result := make([]net.IP, 0)
+	for _, match := range matches {
+		ip := IPFromString(match[1])
+		if !ipNet.Contains(ip) {
+			continue
+		}
+		result = append(result, ip)
+	}
+
+	return result, nil
+}
+
+func IPFromString(s string) net.IP {
+	strs := strings.Split(s, ".")
+	nums := make([]byte, len(strs))
+	for i, s := range strs {
+		n, err := strconv.ParseUint(s, 10, 8)
+		if err != nil {
+			panic(err)
+		}
+		nums[i] = byte(n)
+	}
+	return net.IPv4(nums[0], nums[1], nums[2], nums[3])
 }
 
 func GetOutboundIP() (net.IP, error) {
@@ -70,31 +109,6 @@ func GetOutboundIP() (net.IP, error) {
 	localAddr := conn.LocalAddr().(*net.UDPAddr)
 
 	return localAddr.IP, nil
-}
-
-func Ping(target net.IP, timeout time.Duration) bool {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout+time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, "ping", "-W", fmt.Sprint(timeout.Seconds()), "-c", "1", target.String())
-	err := cmd.Run()
-	return err == nil
-}
-func GetRPiMACAddress(ip net.IP) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, "arp", ip.String())
-	b, err := cmd.CombinedOutput()
-	if err != nil {
-		return "", fmt.Errorf("%v, err: %w", string(b), err)
-	}
-	r := regexp.MustCompile("b8:27:eb:[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2}")
-	s := string(b)
-	mac := r.FindString(s)
-	if mac == "" {
-		return "", fmt.Errorf("%v(%v) is not Raspberry Pi's address", s, ip)
-	}
-
-	return mac, nil
 }
 
 func AllIPAddrInNetwork(ipArr, maskArr [4]byte) []net.IP {
