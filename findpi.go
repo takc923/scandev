@@ -33,13 +33,16 @@ func main() {
 
 	ips := AllIPAddrInNetwork(ipArr, maskArr)
 
+	limit := make(chan struct{}, 100)
 	result := make([]net.IP, 0)
 	var wg sync.WaitGroup
 	wg.Add(len(ips))
 	for _, addr := range ips {
 		addr := addr
+		limit <- struct{}{}
 		go func() {
 			defer wg.Done()
+			defer func() { <-limit }()
 			found := Ping(addr, time.Second)
 			if !found {
 				return
@@ -50,7 +53,6 @@ func main() {
 			}
 			result = append(result, addr)
 		}()
-		time.Sleep(time.Millisecond)
 	}
 	wg.Wait()
 	for _, a := range result {
