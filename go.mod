@@ -1,1 +1,3 @@
-module "findpi"
+module findpi
+
+go 1.16
