@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
 	"net"
 	"os"
@@ -112,8 +113,8 @@ func GetOutboundIP() (net.IP, error) {
 }
 
 func AllIPAddrInNetwork(ipArr, maskArr [4]byte) []net.IP {
-	ip := ToInt32(ipArr)
-	mask := ToInt32(maskArr)
+	ip := binary.BigEndian.Uint32(ipArr[:])
+	mask := binary.BigEndian.Uint32(maskArr[:])
 	networkAddr := ip & mask
 	lastAddress := ip | ^mask
 	result := make([]net.IP, 0, lastAddress-networkAddr)
@@ -121,24 +122,9 @@ func AllIPAddrInNetwork(ipArr, maskArr [4]byte) []net.IP {
 		if addr == ip {
 			continue
 		}
-		s := ToArr(addr)
+		var s [4]byte
+		binary.BigEndian.PutUint32(s[:], addr)
 		result = append(result, net.IPv4(s[0], s[1], s[2], s[3]))
-	}
-	return result
-}
-
-func ToInt32(arr [4]byte) int32 {
-	var result int32 = 0
-	for i := 0; i < 4; i++ {
-		result += int32(arr[i]) << (8 * (3 - i))
-	}
-	return result
-}
-
-func ToArr(addr int32) [4]byte {
-	var result [4]byte
-	for i := 0; i < 4; i++ {
-		result[i] = byte((addr >> ((3 - i) * 8)) & 255)
 	}
 	return result
 }
