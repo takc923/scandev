@@ -15,9 +15,11 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"flag"
 	"fmt"
 	"net"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -33,13 +35,22 @@ func main() {
 		panic(err)
 	}
 
+	r := flag.Bool("r", false, "show Raspberry Pi device")
+	flag.Parse()
+
+	// arpscan shows results only with MAC addresses which contains `filter`.
+	filter := ""
+	if *r {
+		filter = "b8:27:eb" // Raspberry Pi specific address
+	}
+
 	var wg sync.WaitGroup
 	for _, iface := range ifaces {
 		wg.Add(1)
 		// Start up a scan on each interface.
 		go func(iface net.Interface) {
 			defer wg.Done()
-			if err := scan(&iface); err != nil {
+			if err := scan(&iface, filter); err != nil {
 				fmt.Fprintf(os.Stderr, "interface %v: %v\n", iface.Name, err)
 			}
 		}(iface)
@@ -51,7 +62,7 @@ func main() {
 //
 // scan loops forever, sending packets out regularly.  It returns an error if
 // it's ever unable to write a packet.
-func scan(iface *net.Interface) error {
+func scan(iface *net.Interface, filter string) error {
 	// We just look for IPv4 addresses, so try to find if the interface has one.
 	var addr *net.IPNet
 	if addrs, err := iface.Addrs(); err != nil {
@@ -87,7 +98,7 @@ func scan(iface *net.Interface) error {
 
 	// Start up a goroutine to read in packet data.
 	stop := make(chan struct{})
-	go readARP(handle, iface, stop)
+	go readARP(handle, iface, stop, filter)
 	defer close(stop)
 	// Write our scan packets out to the handle.
 	if err := writeARP(handle, iface, addr); err != nil {
@@ -101,7 +112,7 @@ func scan(iface *net.Interface) error {
 // readARP watches a handle for incoming ARP responses we might care about, and prints them.
 //
 // readARP loops until 'stop' is closed.
-func readARP(handle *pcap.Handle, iface *net.Interface, stop chan struct{}) {
+func readARP(handle *pcap.Handle, iface *net.Interface, stop chan struct{}, filter string) {
 	src := gopacket.NewPacketSource(handle, layers.LayerTypeEthernet)
 	in := src.Packets()
 	var history []net.IP
@@ -124,11 +135,15 @@ func readARP(handle *pcap.Handle, iface *net.Interface, stop chan struct{}) {
 			if contains(history, ip) {
 				continue
 			}
+			mac := net.HardwareAddr(arp.SourceHwAddress)
+			if !strings.Contains(mac.String(), filter) {
+				continue
+			}
 
 			// Note:  we might get some packets here that aren't responses to ones we've sent,
 			// if for example someone else sends US an ARP request.  Doesn't much matter, though...
 			// all information is good information :)
-			fmt.Printf("IP %v is at %v\n", ip, net.HardwareAddr(arp.SourceHwAddress))
+			fmt.Printf("IP %v is at %v\n", ip, mac)
 			history = append(history, ip)
 		}
 	}
