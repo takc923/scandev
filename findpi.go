@@ -40,9 +40,8 @@ func main() {
 	var wg sync.WaitGroup
 	wg.Add(len(ips))
 	for _, addr := range ips {
-		addr := addr
 		limit <- struct{}{}
-		go func() {
+		go func(addr net.IP) {
 			defer wg.Done()
 			defer func() { <-limit }()
 			conn, err := net.DialTimeout("tcp", fmt.Sprintf("%v:80", addr), time.Millisecond*300)
@@ -50,7 +49,7 @@ func main() {
 				return
 			}
 			conn.Close()
-		}()
+		}(addr)
 	}
 	wg.Wait()
 	result, err := GetRPiMacAddress(net.IPNet{IP: ip, Mask: mask})
