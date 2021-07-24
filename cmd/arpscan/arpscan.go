@@ -38,6 +38,7 @@ func main() {
 	}
 
 	r := flag.Bool("r", false, "show Raspberry Pi device")
+	wait := flag.Uint("w", 1000, "wait milliseconds for packets")
 	flag.Parse()
 
 	// arpscan shows results only with MAC addresses which contains `filter`.
@@ -52,7 +53,7 @@ func main() {
 		// Start up a scan on each interface.
 		go func(iface net.Interface) {
 			defer wg.Done()
-			if err := scan(&iface, filter); err != nil {
+			if err := scan(&iface, filter, *wait); err != nil {
 				fmt.Fprintf(os.Stderr, "interface %v: %v\n", iface.Name, err)
 			}
 		}(iface)
@@ -64,7 +65,7 @@ func main() {
 //
 // scan loops forever, sending packets out regularly.  It returns an error if
 // it's ever unable to write a packet.
-func scan(iface *net.Interface, filter string) error {
+func scan(iface *net.Interface, filter string, wait uint) error {
 	// We just look for IPv4 addresses, so try to find if the interface has one.
 	var addr *net.IPNet
 	if addrs, err := iface.Addrs(); err != nil {
@@ -135,7 +136,7 @@ L:
 				fmt.Printf("IP %v (%v) is at %v\n", ip, name, mac)
 				history = append(history, ip)
 			}()
-		case <-time.After(time.Millisecond * 300):
+		case <-time.After(time.Millisecond * time.Duration(wait)):
 			break L
 		}
 	}
@@ -180,7 +181,7 @@ func contains(ips []net.IP, target net.IP) bool {
 }
 
 func LookupAddrForMDNS(ip net.IP) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*500)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, "dig", "+short", "-x", ip.String(), "@224.0.0.251", "-p", "5353")
