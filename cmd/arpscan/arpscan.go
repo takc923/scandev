@@ -13,12 +13,14 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"errors"
 	"flag"
 	"fmt"
 	"net"
 	"os"
+	"os/exec"
 	"strings"
 	"sync"
 	"time"
@@ -98,24 +100,56 @@ func scan(iface *net.Interface, filter string) error {
 
 	// Start up a goroutine to read in packet data.
 	stop := make(chan struct{})
-	go readARP(handle, iface, stop, filter)
+	results := make(chan *layers.ARP, 10)
+	go readARP(handle, iface, stop, results)
 	defer close(stop)
 	// Write our scan packets out to the handle.
 	if err := writeARP(handle, iface, addr); err != nil {
 		fmt.Fprintf(os.Stderr, "error writing packets on %v: %v\n", iface.Name, err)
 		return err
 	}
-	time.Sleep(time.Millisecond * 300)
+
+	var history []net.IP
+	var wg sync.WaitGroup
+L:
+	for {
+		select {
+		case arp := <-results:
+			ip := net.IP(arp.SourceProtAddress)
+			if contains(history, ip) {
+				continue
+			}
+			mac := net.HardwareAddr(arp.SourceHwAddress)
+			if !strings.Contains(mac.String(), filter) {
+				continue
+			}
+
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				name, _ := LookupAddrForMDNS(ip)
+
+				// Note:  we might get some packets here that aren't responses to ones we've sent,
+				// if for example someone else sends US an ARP request.  Doesn't much matter, though...
+				// all information is good information :)
+				fmt.Printf("IP %v (%v) is at %v\n", ip, name, mac)
+				history = append(history, ip)
+			}()
+		case <-time.After(time.Millisecond * 300):
+			break L
+		}
+	}
+	wg.Wait()
+
 	return nil
 }
 
 // readARP watches a handle for incoming ARP responses we might care about, and prints them.
 //
 // readARP loops until 'stop' is closed.
-func readARP(handle *pcap.Handle, iface *net.Interface, stop chan struct{}, filter string) {
+func readARP(handle *pcap.Handle, iface *net.Interface, stop chan struct{}, results chan<- *layers.ARP) {
 	src := gopacket.NewPacketSource(handle, layers.LayerTypeEthernet)
 	in := src.Packets()
-	var history []net.IP
 	for {
 		var packet gopacket.Packet
 		select {
@@ -131,20 +165,7 @@ func readARP(handle *pcap.Handle, iface *net.Interface, stop chan struct{}, filt
 				// This is a packet I sent.
 				continue
 			}
-			ip := net.IP(arp.SourceProtAddress)
-			if contains(history, ip) {
-				continue
-			}
-			mac := net.HardwareAddr(arp.SourceHwAddress)
-			if !strings.Contains(mac.String(), filter) {
-				continue
-			}
-
-			// Note:  we might get some packets here that aren't responses to ones we've sent,
-			// if for example someone else sends US an ARP request.  Doesn't much matter, though...
-			// all information is good information :)
-			fmt.Printf("IP %v is at %v\n", ip, mac)
-			history = append(history, ip)
+			results <- arp
 		}
 	}
 }
@@ -156,6 +177,19 @@ func contains(ips []net.IP, target net.IP) bool {
 		}
 	}
 	return false
+}
+
+func LookupAddrForMDNS(ip net.IP) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "dig", "+short", "-x", ip.String(), "@224.0.0.251", "-p", "5353")
+	b, err := cmd.CombinedOutput()
+	str := strings.TrimRight(string(b), ".\n")
+	if err != nil {
+		return "", fmt.Errorf("dig command failed: %w, stdout+stderr: %v", err, str)
+	}
+	return str, nil
 }
 
 // writeARP writes an ARP request for each address on our local network to the
