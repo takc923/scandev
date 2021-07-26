@@ -68,21 +68,17 @@ func main() {
 func scan(iface *net.Interface, filter string, wait uint) error {
 	// We just look for IPv4 addresses, so try to find if the interface has one.
 	var addr *net.IPNet
-	if addrs, err := iface.Addrs(); err != nil {
+	addrs, err := iface.Addrs()
+	if err != nil {
 		return err
-	} else {
-		for _, a := range addrs {
-			if ipnet, ok := a.(*net.IPNet); ok {
-				if ip4 := ipnet.IP.To4(); ip4 != nil {
-					addr = &net.IPNet{
-						IP:   ip4,
-						Mask: ipnet.Mask[len(ipnet.Mask)-4:],
-					}
-					break
-				}
-			}
+	}
+	for _, a := range addrs {
+		addr = getIPNet(a)
+		if addr != nil {
+			break
 		}
 	}
+
 	// Sanity-check that the interface has a good address.
 	if addr == nil {
 		return nil
@@ -120,6 +116,8 @@ L:
 			if contains(history, ip) {
 				continue
 			}
+			history = append(history, ip)
+
 			mac := net.HardwareAddr(arp.SourceHwAddress)
 			if !strings.Contains(mac.String(), filter) {
 				continue
@@ -134,7 +132,6 @@ L:
 				// if for example someone else sends US an ARP request.  Doesn't much matter, though...
 				// all information is good information :)
 				fmt.Printf("IP %v (%v) is at %v\n", ip, name, mac)
-				history = append(history, ip)
 			}()
 		case <-time.After(time.Millisecond * time.Duration(wait)):
 			break L
@@ -143,6 +140,23 @@ L:
 	wg.Wait()
 
 	return nil
+}
+
+func getIPNet(addr net.Addr) *net.IPNet {
+	ipNet, ok := addr.(*net.IPNet)
+	if !ok {
+		return nil
+	}
+
+	ip4 := ipNet.IP.To4()
+	if ip4 == nil {
+		return nil
+	}
+
+	return &net.IPNet{
+		IP:   ip4,
+		Mask: ipNet.Mask[len(ipNet.Mask)-4:],
+	}
 }
 
 // readARP watches a handle for incoming ARP responses we might care about, and prints them.
