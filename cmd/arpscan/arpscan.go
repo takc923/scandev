@@ -254,7 +254,7 @@ func ips(n *net.IPNet) (out []net.IP) {
 	for network++; network < broadcast; network++ {
 		var buf [4]byte
 		binary.BigEndian.PutUint32(buf[:], network)
-		out = append(out, net.IP(buf[:]))
+		out = append(out, buf[:])
 	}
 	return
 }
