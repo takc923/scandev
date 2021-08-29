@@ -145,7 +145,7 @@ L:
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+				ctx, cancel := context.WithTimeout(context.Background(), time.Second) // todo: improve
 				defer cancel()
 				_, name, _ := server.ReverseLookup(ctx, ip)
 
