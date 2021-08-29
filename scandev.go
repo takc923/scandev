@@ -30,7 +30,8 @@ func main() {
 	// Get a list of all interfaces.
 	ifaces, err := net.Interfaces()
 	if err != nil {
-		panic(err)
+		fmt.Fprintf(os.Stderr, "failed to get interfaces: %v\n", err)
+		os.Exit(1)
 	}
 
 	r := flag.Bool("r", false, "show only Raspberry Pi device")
@@ -105,7 +106,7 @@ func scan(iface *net.Interface, filter string, wait, interval time.Duration) err
 
 	serverAddr, err := net.ResolveUDPAddr("udp", mdns.DefaultAddress)
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	l, err := net.ListenMulticastUDP("udp4", iface, serverAddr)
