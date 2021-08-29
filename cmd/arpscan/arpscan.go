@@ -126,6 +126,7 @@ func scan(iface *net.Interface, filter string, wait, interval time.Duration) err
 
 	var history []net.IP
 	var wg sync.WaitGroup
+	timeout := time.After(wait)
 L:
 	for {
 		select {
@@ -153,7 +154,7 @@ L:
 				// all information is good information :)
 				fmt.Printf("IP %v (%v) is at %v\n", ip, name, mac)
 			}()
-		case <-time.After(wait):
+		case <-timeout:
 			break L
 		}
 	}
