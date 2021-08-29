@@ -4,11 +4,6 @@
 // that can be found in the LICENSE file in the root of the source
 // tree.
 
-// arpscan implements ARP scanning of all interfaces' local networks using
-// gopacket and its subpackages.  This example shows, among other things:
-//   * Generating and sending packet data
-//   * Reading in packet data and interpreting it
-//   * Use of the 'pcap' subpackage for reading/writing
 package main
 
 import (
