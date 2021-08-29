@@ -113,7 +113,7 @@ func scan(iface *net.Interface, filter string, wait, interval time.Duration) err
 		panic(err)
 	}
 
-	l, err := net.ListenUDP("udp4", serverAddr)
+	l, err := net.ListenMulticastUDP("udp4", iface, serverAddr)
 	if err != nil {
 		return err
 	}
