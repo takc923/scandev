@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"os/exec"
 	"strings"
 	"sync"
 	"time"
@@ -28,6 +27,8 @@ import (
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
 	"github.com/google/gopacket/pcap"
+	"github.com/takc923/mdns"
+	"golang.org/x/net/ipv4"
 )
 
 func main() {
@@ -37,8 +38,9 @@ func main() {
 		panic(err)
 	}
 
-	r := flag.Bool("r", false, "show Raspberry Pi device")
+	r := flag.Bool("r", false, "show only Raspberry Pi device")
 	wait := flag.Uint("w", 1000, "wait milliseconds for packets")
+	interval := flag.Uint("i", 1, "interval between ARP requests in milliseconds")
 	flag.Parse()
 
 	// arpscan shows results only with MAC addresses which contains `filter`.
@@ -53,7 +55,7 @@ func main() {
 		// Start up a scan on each interface.
 		go func(iface net.Interface) {
 			defer wg.Done()
-			if err := scan(&iface, filter, *wait); err != nil {
+			if err := scan(&iface, filter, time.Duration(*wait)*time.Millisecond, time.Duration(*interval)*time.Millisecond); err != nil {
 				fmt.Fprintf(os.Stderr, "interface %v: %v\n", iface.Name, err)
 			}
 		}(iface)
@@ -65,7 +67,7 @@ func main() {
 //
 // scan loops forever, sending packets out regularly.  It returns an error if
 // it's ever unable to write a packet.
-func scan(iface *net.Interface, filter string, wait uint) error {
+func scan(iface *net.Interface, filter string, wait, interval time.Duration) error {
 	// We just look for IPv4 addresses, so try to find if the interface has one.
 	var addr *net.IPNet
 	addrs, err := iface.Addrs()
@@ -101,10 +103,26 @@ func scan(iface *net.Interface, filter string, wait uint) error {
 	go readARP(handle, iface, stop, results)
 	defer close(stop)
 	// Write our scan packets out to the handle.
-	if err := writeARP(handle, iface, addr); err != nil {
+	if err := writeARP(handle, iface, addr, interval); err != nil {
 		fmt.Fprintf(os.Stderr, "error writing packets on %v: %v\n", iface.Name, err)
 		return err
 	}
+
+	serverAddr, err := net.ResolveUDPAddr("udp", mdns.DefaultAddress)
+	if err != nil {
+		panic(err)
+	}
+
+	l, err := net.ListenUDP("udp4", serverAddr)
+	if err != nil {
+		return err
+	}
+
+	server, err := mdns.Server(ipv4.NewPacketConn(l), &mdns.Config{})
+	if err != nil {
+		return err
+	}
+	defer server.Close()
 
 	var history []net.IP
 	var wg sync.WaitGroup
@@ -126,14 +144,16 @@ L:
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				name, _ := LookupAddrForMDNS(ip)
+				ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+				defer cancel()
+				_, name, _ := server.ReverseLookup(ctx, ip)
 
 				// Note:  we might get some packets here that aren't responses to ones we've sent,
 				// if for example someone else sends US an ARP request.  Doesn't much matter, though...
 				// all information is good information :)
 				fmt.Printf("IP %v (%v) is at %v\n", ip, name, mac)
 			}()
-		case <-time.After(time.Millisecond * time.Duration(wait)):
+		case <-time.After(wait):
 			break L
 		}
 	}
@@ -194,22 +214,9 @@ func contains(ips []net.IP, target net.IP) bool {
 	return false
 }
 
-func LookupAddrForMDNS(ip net.IP) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*500)
-	defer cancel()
-
-	cmd := exec.CommandContext(ctx, "dig", "+short", "-x", ip.String(), "@224.0.0.251", "-p", "5353")
-	b, err := cmd.CombinedOutput()
-	str := strings.TrimRight(string(b), ".\n")
-	if err != nil {
-		return "", fmt.Errorf("dig command failed: %w, stdout+stderr: %v", err, str)
-	}
-	return str, nil
-}
-
 // writeARP writes an ARP request for each address on our local network to the
 // pcap handle.
-func writeARP(handle *pcap.Handle, iface *net.Interface, addr *net.IPNet) error {
+func writeARP(handle *pcap.Handle, iface *net.Interface, addr *net.IPNet, interval time.Duration) error {
 	// Set up all the layers' fields we can.
 	eth := layers.Ethernet{
 		SrcMAC:       iface.HardwareAddr,
@@ -239,6 +246,7 @@ func writeARP(handle *pcap.Handle, iface *net.Interface, addr *net.IPNet) error 
 		if err := handle.WritePacketData(buf.Bytes()); err != nil {
 			return err
 		}
+		time.Sleep(interval)
 	}
 	return nil
 }
