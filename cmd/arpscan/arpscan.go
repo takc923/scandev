@@ -240,8 +240,10 @@ func writeARP(handle *pcap.Handle, iface *net.Interface, addr *net.IPNet, interv
 		FixLengths:       true,
 		ComputeChecksums: true,
 	}
-	// Send one packet for every address.
-	for _, ip := range ips(addr) {
+	// Send two packets for every address because sometimes ARP packets are lost.
+	dsts := ips(addr)
+	dsts = append(dsts, dsts...)
+	for _, ip := range dsts {
 		arp.DstProtAddress = ip
 		gopacket.SerializeLayers(buf, opts, &eth, &arp)
 		if err := handle.WritePacketData(buf.Bytes()); err != nil {
