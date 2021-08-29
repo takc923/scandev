@@ -39,7 +39,7 @@ func main() {
 	}
 
 	r := flag.Bool("r", false, "show only Raspberry Pi device")
-	wait := flag.Uint("w", 1000, "wait milliseconds for packets")
+	wait := flag.Uint("w", 1000, "duration in milliseconds to wait for ARP responses")
 	interval := flag.Uint("i", 1, "interval between ARP requests in milliseconds")
 	flag.Parse()
 
