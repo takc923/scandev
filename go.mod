@@ -1,4 +1,4 @@
-module findpi
+module github.com/takc923/scandev
 
 go 1.16
 
