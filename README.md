@@ -1,6 +1,12 @@
 scandev scans the current network and shows the devices on the network.
 
-Example:
+### How to install
+
+```
+$ go install github.com/takc923/scandev@latest
+```
+
+### Example
 
 Show all devices
 
@@ -25,4 +31,5 @@ IP 192.168.1.30 (apple.local.) is at b8:27:eb:56:84:7a
 IP 192.168.1.9 (orange.local.) is at b8:27:eb:fe:97:99
 ```
 
+### Notice
 The source was copied and pasted from [here](https://github.com/google/gopacket/blob/3eaba08943250fd212520e5cff00ed808b8fc60a/examples/arpscan/arpscan.go) at first and modified.
