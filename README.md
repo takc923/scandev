@@ -31,5 +31,13 @@ IP 192.168.1.30 (apple.local.) is at b8:27:eb:56:84:7a
 IP 192.168.1.9 (orange.local.) is at b8:27:eb:fe:97:99
 ```
 
+### How it works
+scandev does:
+ 
+* Automatically detects active interfaces.
+* Sends ARP message to all possible IP addresses.
+* Sends mDNS reverse lookup query for the detected IP addresses.
+* Show the obtained IP addresses, domain names by mDNS and MAC addresses.
+
 ### Notice
 The source was copied and pasted from [here](https://github.com/google/gopacket/blob/3eaba08943250fd212520e5cff00ed808b8fc60a/examples/arpscan/arpscan.go) at first and modified.
