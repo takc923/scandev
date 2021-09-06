@@ -80,7 +80,7 @@ func scan(iface *net.Interface, filter string, wait, interval time.Duration) err
 	// Sanity-check that the interface has a good address.
 	if addr == nil {
 		return nil
-	} else if addr.IP[0] == 127 {
+	} else if addr.IP[0] == 127 || (addr.IP[0] == 169 && addr.IP[1] == 254) { // Ignore loopback addresses and link-local addresses.
 		return nil
 	} else if addr.Mask[0] != 0xff || addr.Mask[1] != 0xff {
 		return errors.New("mask means network is too large")
@@ -141,7 +141,7 @@ L:
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				ctx, cancel := context.WithTimeout(context.Background(), time.Second) // todo: improve
+				ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 				defer cancel()
 				_, name, _ := server.ReverseLookup(ctx, ip)
 
